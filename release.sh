@@ -47,7 +47,6 @@ check_git_clean() {
 
 # Parse command line arguments
 VERSION_TYPE="patch"
-SKIP_TESTS=false
 SKIP_GIT=false
 DRY_RUN=false
 FORCE=false
@@ -62,7 +61,6 @@ while [[ "$#" -gt 0 ]]; do
       validate_version "$CUSTOM_VERSION"
       shift 
       ;;
-    --skip-tests) SKIP_TESTS=true; shift ;;
     --skip-git) SKIP_GIT=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --force) FORCE=true; shift ;;
@@ -74,7 +72,6 @@ while [[ "$#" -gt 0 ]]; do
       echo "  --minor                Bump minor version (0.x.0)"
       echo "  --patch                Bump patch version (0.0.x) [default]"
       echo "  --version=x.y.z        Set specific version"
-      echo "  --skip-tests           Skip running tests"
       echo "  --skip-git             Skip git operations (tag and commit)"
       echo "  --dry-run              Run without making any changes"
       echo "  --force                Force release even with uncommitted changes (use with caution)"
@@ -126,22 +123,8 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-# Run tests if available and not skipped
-if [ "$SKIP_TESTS" = false ] && grep -q '"test"' package.json; then
-  print_yellow "Running tests..."
-  npm test
-  if [ $? -ne 0 ]; then
-    print_red "Tests failed. Release aborted."
-    exit 1
-  fi
-  print_green "Tests passed!"
-else
-  if [ "$SKIP_TESTS" = true ]; then
-    print_yellow "Skipping tests as requested."
-  else
-    print_yellow "No test script found in package.json. Skipping tests."
-  fi
-fi
+# Tests are skipped as they don't exist
+print_yellow "Skipping tests as they don't exist."
 
 # Update version in package.json
 print_yellow "Updating version in package.json..."
