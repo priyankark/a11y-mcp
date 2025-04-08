@@ -1,0 +1,31 @@
+{
+  "name": "a11y-mcp",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "a11y-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "build": "chmod +x src/index.js",
+    "test": "node test/run-test.js"
+  },
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "audit",
+    "mcp",
+    "axe-core"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "MCP server for performing accessibility audits on webpages",
+  "dependencies": {
+    "@axe-core/puppeteer": "^4.10.1",
+    "@modelcontextprotocol/create-server": "^0.3.1",
+    "@modelcontextprotocol/sdk": "^1.9.0",
+    "axe-core": "^4.10.3",
+    "puppeteer": "^24.6.0"
+  }
+}

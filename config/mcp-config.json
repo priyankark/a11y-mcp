@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "a11y": {
+      "command": "npx",
+      "args": ["a11y-mcp"],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
