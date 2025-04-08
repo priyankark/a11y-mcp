@@ -8,8 +8,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "build": "chmod +x src/index.js",
-    "test": "node test/run-test.js"
+    "build": "chmod +x src/index.js"
   },
   "keywords": [
     "accessibility",
@@ -19,7 +18,7 @@
     "axe-core"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MPL-2.0",
   "description": "MCP server for performing accessibility audits on webpages",
   "dependencies": {
     "@axe-core/puppeteer": "^4.10.1",

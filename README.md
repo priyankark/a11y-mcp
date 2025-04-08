@@ -23,28 +23,7 @@ npx a11y-mcp
 
 To use this MCP server with Cline, you need to add it to your MCP settings configuration file.
 
-### For Claude Desktop App
-
-Edit the file at `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent path on your operating system.
-
-Add the following to the `mcpServers` object:
-
-```json
-{
-  "mcpServers": {
-    "a11y": {
-      "command": "npx",
-      "args": ["a11y-mcp"],
-      "disabled": false,
-      "autoApprove": []
-    }
-  }
-}
-```
-
-### For Claude VSCode Extension
-
-Edit the file at `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (macOS) or the equivalent path on your operating system.
+### MCP configuration 
 
 Add the following to the `mcpServers` object:
 
@@ -128,9 +107,6 @@ chmod +x release.sh
 # Release a specific version
 ./release.sh --version=1.2.3
 
-# Skip running tests
-./release.sh --skip-tests
-
 # Skip git operations
 ./release.sh --skip-git
 
@@ -148,5 +124,7 @@ For more information, run:
 ```
 
 ## License
+MPL 2.0
 
-ISC
+## Credits
+This project builds atop the awesome work done by [axe-core](https://github.com/dequelabs/axe-core)
