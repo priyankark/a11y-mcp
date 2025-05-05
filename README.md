@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/priyankark-a11y-mcp-badge.png)](https://mseep.ai/app/priyankark-a11y-mcp)
+
 # A11y MCP Server
 
 An MCP (Model Context Protocol) server for performing accessibility audits on webpages using axe-core. Use the results in an agentic loop with your favorite AI assistants (Cline/Cursor/GH Copilot) and let them fix a11y issues for you!
