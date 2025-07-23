@@ -2,6 +2,10 @@
 
 An MCP (Model Context Protocol) server for performing accessibility audits on webpages using axe-core. Use the results in an agentic loop with your favorite AI assistants (Cline/Cursor/GH Copilot) and let them fix a11y issues for you!
 
+<a href="https://glama.ai/mcp/servers/@priyankark/a11y-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@priyankark/a11y-mcp/badge" alt="a11y-mcp MCP server" />
+</a>
+
 ## Features
 
 - Perform detailed accessibility audits on any webpage
