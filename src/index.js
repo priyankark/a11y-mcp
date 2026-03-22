@@ -7,8 +7,82 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
+import { lookup } from 'node:dns/promises';
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
+
+/**
+ * Validate that a URL is safe to navigate to (SSRF protection).
+ * Only allows http/https schemes and blocks requests to internal networks.
+ */
+async function validateUrl(urlString) {
+  let parsed;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new Error('Invalid URL format');
+  }
+
+  // Only allow http and https schemes
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Disallowed URL scheme: ${parsed.protocol}`);
+  }
+
+  const hostname = parsed.hostname;
+
+  // Block obvious localhost/loopback hostnames
+  const blockedHostnames = ['localhost', '127.0.0.1', '::1', '0.0.0.0', '[::1]'];
+  if (blockedHostnames.includes(hostname.toLowerCase())) {
+    throw new Error('URLs pointing to loopback addresses are not allowed');
+  }
+
+  // Resolve the hostname and check the resulting IP
+  let address;
+  try {
+    const result = await lookup(hostname);
+    address = result.address;
+  } catch {
+    throw new Error(`Unable to resolve hostname: ${hostname}`);
+  }
+
+  if (isPrivateIP(address)) {
+    throw new Error('URLs pointing to private or internal network addresses are not allowed');
+  }
+
+  return parsed;
+}
+
+/**
+ * Check if an IP address belongs to a private, loopback, or link-local range.
+ */
+function isPrivateIP(ip) {
+  // IPv4 checks
+  const parts = ip.split('.').map(Number);
+  if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+    // 127.0.0.0/8 — loopback
+    if (parts[0] === 127) return true;
+    // 10.0.0.0/8 — private
+    if (parts[0] === 10) return true;
+    // 172.16.0.0/12 — private
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    // 192.168.0.0/16 — private
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    // 169.254.0.0/16 — link-local / cloud metadata
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    // 0.0.0.0/8
+    if (parts[0] === 0) return true;
+  }
+
+  // IPv6 loopback
+  if (ip === '::1' || ip === '0:0:0:0:0:0:0:1') return true;
+  // IPv6 link-local
+  if (ip.toLowerCase().startsWith('fe80:')) return true;
+  // IPv6 unique local (fc00::/7)
+  const first2 = ip.toLowerCase().slice(0, 2);
+  if (first2 === 'fc' || first2 === 'fd') return true;
+
+  return false;
+}
 
 class A11yServer {
   constructor() {
@@ -104,18 +178,21 @@ class A11yServer {
     }
 
     try {
+      // Validate URL to prevent SSRF
+      const validatedUrl = await validateUrl(args.url);
+
       const browser = await puppeteer.launch({
         headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
       const page = await browser.newPage();
-      
+
       // Set a reasonable viewport
       await page.setViewport({ width: 1280, height: 800 });
-      
-      // Navigate to the page
-      await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
-      
+
+      // Navigate to the page using the validated URL
+      await page.goto(validatedUrl.href, { waitUntil: 'networkidle2', timeout: 30000 });
+
       // Run axe on the page
       const axeOptions = {};
       if (args.tags && args.tags.length > 0) {
@@ -192,18 +269,21 @@ class A11yServer {
     }
 
     try {
+      // Validate URL to prevent SSRF
+      const validatedUrl = await validateUrl(args.url);
+
       const browser = await puppeteer.launch({
         headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
       const page = await browser.newPage();
-      
+
       // Set a reasonable viewport
       await page.setViewport({ width: 1280, height: 800 });
-      
-      // Navigate to the page
-      await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
-      
+
+      // Navigate to the page using the validated URL
+      await page.goto(validatedUrl.href, { waitUntil: 'networkidle2', timeout: 30000 });
+
       // Run axe on the page
       const results = await new AxePuppeteer(page).analyze();
       
