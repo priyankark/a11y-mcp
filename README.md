@@ -132,3 +132,18 @@ MPL 2.0
 
 ## Credits
 This project builds atop the awesome work done by [axe-core](https://github.com/dequelabs/axe-core)
+
+## Security and hosting
+
+Requires Node.js 22.12 or newer. Chrome runs with its sandbox enabled.
+Every HTTP(S) connection, including redirects and subresources, goes through a
+validating proxy that pins the destination IP. Private, link-local, multicast,
+reserved, and cloud metadata addresses are blocked, including mapped IPv6.
+Loopback remains available for local development; set `AUDIT_ALLOW_LOOPBACK=false`
+for public-only audits. LAN addresses are no longer supported.
+One audit runs per MCP process, with a 90-second browser deadline.
+For hosted use, additionally isolate browser workers and enforce network egress
+restrictions at the infrastructure layer. Automated axe checks do not establish
+WCAG conformance; manual review is still required.
+
+Run `npm test`, `npm run test:smoke` (requires Chrome), and `npm audit`.

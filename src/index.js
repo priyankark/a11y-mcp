@@ -7,115 +7,17 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { lookup } from 'node:dns/promises';
 import puppeteer from 'puppeteer';
 import { AxePuppeteer } from '@axe-core/puppeteer';
+import { createAuditProxy, parseUrl, resolveTarget } from './network.js';
 
-/**
- * Validate that a URL is safe to navigate to.
- * Allows localhost and private networks (needed for auditing local dev servers).
- * Blocks cloud metadata endpoints and non-http schemes.
- */
-async function validateUrl(urlString) {
-  let parsed;
-  try {
-    parsed = new URL(urlString);
-  } catch {
-    throw new Error('Invalid URL format');
+function validateArgs(args) {
+  if (!args || typeof args.url !== 'string' || args.url.length > 8192 ||
+      (args.includeHtml !== undefined && typeof args.includeHtml !== 'boolean') ||
+      (args.tags !== undefined && (!Array.isArray(args.tags) || args.tags.length > 32 ||
+        args.tags.some(tag => typeof tag !== 'string' || tag.length > 100)))) {
+    throw new McpError(ErrorCode.InvalidParams, 'Invalid audit arguments');
   }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Disallowed URL scheme: ${parsed.protocol}`);
-  }
-
-  const hostname = parsed.hostname;
-
-  // Resolve DNS and block cloud metadata endpoints
-  let address;
-  try {
-    // IP literals don't need resolution
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.startsWith('[')) {
-      address = hostname.replace(/^\[|\]$/g, '');
-    } else {
-      const result = await lookup(hostname);
-      address = result.address;
-    }
-  } catch {
-    throw new Error(`Unable to resolve hostname: ${hostname}`);
-  }
-
-  if (isCloudMetadataIP(address)) {
-    throw new Error('URLs pointing to cloud metadata endpoints are not allowed');
-  }
-
-  return parsed;
-}
-
-/**
- * Check if an IP resolves to a cloud metadata endpoint (169.254.169.254)
- * or other dangerous link-local destinations. Handles IPv4-mapped IPv6.
- */
-function isCloudMetadataIP(ip) {
-  const normalized = extractIPv4FromMapped(ip);
-
-  if (normalized) {
-    const parts = normalized.split('.').map(Number);
-    if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
-      // 169.254.169.254 — cloud metadata (AWS, GCP, Azure)
-      if (parts[0] === 169 && parts[1] === 254 && parts[2] === 169 && parts[3] === 254) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Extract IPv4 address from IPv4-mapped IPv6 (e.g. ::ffff:169.254.169.254),
- * or return the IP as-is if it's already IPv4. Returns null for pure IPv6.
- */
-function extractIPv4FromMapped(ip) {
-  // Plain IPv4
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return ip;
-  // IPv4-mapped IPv6: ::ffff:x.x.x.x
-  const mapped = ip.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  if (mapped) return mapped[1];
-  return null;
-}
-
-/**
- * Intercept Puppeteer network requests to enforce URL policy at navigation time,
- * preventing DNS rebinding attacks.
- */
-async function setupRequestInterception(page) {
-  await page.setRequestInterception(true);
-  page.on('request', async (request) => {
-    try {
-      const url = new URL(request.url());
-      // Only intercept navigations and document requests
-      if (request.isNavigationRequest()) {
-        const hostname = url.hostname;
-        let address;
-        try {
-          if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.startsWith('[')) {
-            address = hostname.replace(/^\[|\]$/g, '');
-          } else {
-            const result = await lookup(hostname);
-            address = result.address;
-          }
-        } catch {
-          request.abort('namenotresolved');
-          return;
-        }
-        if (isCloudMetadataIP(address)) {
-          request.abort('accessdenied');
-          return;
-        }
-      }
-      request.continue();
-    } catch {
-      request.continue();
-    }
-  });
 }
 
 class A11yServer {
@@ -123,7 +25,7 @@ class A11yServer {
     this.server = new Server(
       {
         name: 'a11y-accessibility',
-        version: '1.0.0',
+        version: '1.1.0',
       },
       {
         capabilities: {
@@ -132,6 +34,7 @@ class A11yServer {
       }
     );
 
+    this.auditRunning = false;
     this.setupToolHandlers();
 
     // Error handling
@@ -204,24 +107,30 @@ class A11yServer {
   }
 
   async auditWebpage(args) {
-    if (!args.url) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'URL is required'
-      );
-    }
-
-    let browser;
+    validateArgs(args);
+    if (this.auditRunning) throw new McpError(ErrorCode.InvalidRequest, 'An audit is already running');
+    this.auditRunning = true;
+    let browser, proxy, timer;
     try {
-      const validatedUrl = await validateUrl(args.url);
-
+      const allowLoopback = process.env.AUDIT_ALLOW_LOOPBACK !== 'false';
+      const validatedUrl = parseUrl(args.url);
+      await resolveTarget(validatedUrl.hostname, allowLoopback);
+      proxy = await createAuditProxy(allowLoopback);
       browser = await puppeteer.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        headless: true,
+        args: [`--proxy-server=http://127.0.0.1:${proxy.port}`,
+          '--proxy-bypass-list=<-loopback>', '--disable-quic',
+          '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
       });
+      timer = setTimeout(() => { void browser.close().catch(() => {}); }, 90_000);
       const page = await browser.newPage();
-
-      await setupRequestInterception(page);
+      await page.setBypassServiceWorker(true);
+      await page.setRequestInterception(true);
+      page.on('request', request => {
+        const scheme = new URL(request.url()).protocol;
+        void (['http:', 'https:', 'data:', 'blob:', 'about:'].includes(scheme)
+          ? request.continue() : request.abort('accessdenied')).catch(() => {});
+      });
       await page.setViewport({ width: 1280, height: 800 });
       await page.goto(validatedUrl.href, { waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -286,31 +195,40 @@ class A11yServer {
         isError: true,
       };
     } finally {
-      if (browser) {
-        await browser.close().catch(() => {});
+      clearTimeout(timer);
+      try { await browser?.close().catch(() => {}); }
+      finally {
+        try { await proxy?.close(); }
+        finally { this.auditRunning = false; }
       }
     }
   }
 
   async getSummary(args) {
-    if (!args.url) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'URL is required'
-      );
-    }
-
-    let browser;
+    validateArgs(args);
+    if (this.auditRunning) throw new McpError(ErrorCode.InvalidRequest, 'An audit is already running');
+    this.auditRunning = true;
+    let browser, proxy, timer;
     try {
-      const validatedUrl = await validateUrl(args.url);
-
+      const allowLoopback = process.env.AUDIT_ALLOW_LOOPBACK !== 'false';
+      const validatedUrl = parseUrl(args.url);
+      await resolveTarget(validatedUrl.hostname, allowLoopback);
+      proxy = await createAuditProxy(allowLoopback);
       browser = await puppeteer.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        headless: true,
+        args: [`--proxy-server=http://127.0.0.1:${proxy.port}`,
+          '--proxy-bypass-list=<-loopback>', '--disable-quic',
+          '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
       });
+      timer = setTimeout(() => { void browser.close().catch(() => {}); }, 90_000);
       const page = await browser.newPage();
-
-      await setupRequestInterception(page);
+      await page.setBypassServiceWorker(true);
+      await page.setRequestInterception(true);
+      page.on('request', request => {
+        const scheme = new URL(request.url()).protocol;
+        void (['http:', 'https:', 'data:', 'blob:', 'about:'].includes(scheme)
+          ? request.continue() : request.abort('accessdenied')).catch(() => {});
+      });
       await page.setViewport({ width: 1280, height: 800 });
       await page.goto(validatedUrl.href, { waitUntil: 'networkidle2', timeout: 30000 });
 
@@ -362,8 +280,11 @@ class A11yServer {
         isError: true,
       };
     } finally {
-      if (browser) {
-        await browser.close().catch(() => {});
+      clearTimeout(timer);
+      try { await browser?.close().catch(() => {}); }
+      finally {
+        try { await proxy?.close(); }
+        finally { this.auditRunning = false; }
       }
     }
   }
