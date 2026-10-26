@@ -8,6 +8,7 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import puppeteer from 'puppeteer';
+import { readFileSync } from 'node:fs';
 import { AxePuppeteer } from '@axe-core/puppeteer';
 import { createAuditProxy, parseUrl, resolveTarget } from './network.js';
 
@@ -25,7 +26,7 @@ class A11yServer {
     this.server = new Server(
       {
         name: 'a11y-accessibility',
-        version: '1.1.0',
+        version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
       },
       {
         capabilities: {
